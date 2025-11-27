@@ -1,6 +1,6 @@
 <div style="text-align: center;">
 <h1>
-HertzVST - Diffusion-based Framework for Video Style Transfer
+HertzVST - Diffusion-based Training-Free Framework for Video Style Transfer
 </h1>
 </div>
 

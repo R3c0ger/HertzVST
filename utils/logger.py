@@ -9,7 +9,7 @@ from .paths import get_exp_dir
 logger.remove()
 
 
-def setup_logger(save_dir=get_exp_dir() / "logs", level="INFO", file_level=None):
+def setup_logger(save_dir=get_exp_dir(), level="INFO", file_level=None):
     """Configure the logger."""
     console_msg = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green>"
