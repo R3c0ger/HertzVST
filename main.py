@@ -35,13 +35,14 @@ def arg_parser():
     parser.add_argument("--pretrained_model_path", type=str, default="stable-diffusion-v1-5", 
                         help="Pretrained Stable Diffusion model path")
     # Content Inversion
-    parser.add_argument("--content_path", type=str, default="examples/contents/00.mp4", 
+    # parser.add_argument("--content_path", type=str, default="examples/contents/bmx-rider", 
+    parser.add_argument("--content_path", type=str, default="examples/contents/01.mp4", 
                         help="Content frames folder")
     parser.add_argument("--content_out", type=str, 
                         default=get_exp_dir() + "results/contents-inv", 
                         help="Content inversion output folder")
     # Style Inversion
-    parser.add_argument( "--style_path", type=str, default="examples/styles/3.png", 
+    parser.add_argument( "--style_path", type=str, default="examples/styles/0.png", 
                         help="Style image path")
     parser.add_argument("--style_out", type=str, 
                         default=get_exp_dir() + "results/styles-inv", 
@@ -62,7 +63,6 @@ def arg_parser():
     
     # Other parameters
     parser.add_argument("--weight_dtype", type=torch.dtype, default=torch.float16)
-    parser.add_argument("--num_frames", type=int, default=16, help="The total nums of mask.")
     parser.add_argument("--height", type=int, default=512, help="The height of the frames.")
     parser.add_argument("--width", type=int, default=512, help="The width of the frames.")
     parser.add_argument("--time_steps", type=int, default=50, help="The number of time steps.")
@@ -105,18 +105,19 @@ def main():
                 f"run_mask={run_mask}, run_transfer={run_transfer}")
     logger.info(f"Path of pretrained model: {args.pretrained_model_path}")
 
+    num_frames = 16
+
     if run_content:
         logger.info(
             "Starting content inversion..."
             f"\n- Content path: {args.content_path}"
             f"\n- Content output path: {args.content_out}"
         )
-        content_inversion_main(
+        num_frames = content_inversion_main(
             pretrained_model_path=args.pretrained_model_path,
             content_path=args.content_path,
             output_path=args.content_out,
             weight_dtype=args.weight_dtype,
-            num_frames=args.num_frames,
             height=args.height,
             width=args.width,
             time_steps=args.time_steps,
@@ -131,13 +132,14 @@ def main():
             "Starting style inversion..."
             f"\n- Style path: {args.style_path}"
             f"\n- Style output path: {args.style_out}"
+            f"\n- Number of frames: {num_frames}"
         )
         style_inversion_main(
             pretrained_model_path=args.pretrained_model_path,
             style_path=args.style_path,
             output_path=args.style_out,
             weight_dtype=args.weight_dtype,
-            num_frames=args.num_frames,
+            num_frames=num_frames,
             height=args.height,
             width=args.width,
             time_steps=args.time_steps,
@@ -164,7 +166,7 @@ def main():
             feature_path=args.feature_path or feature_default,
             mask_path=args.mask_path or "examples/masks/mallard-fly.png",
             output_path=args.masks_out,
-            num_frames=args.num_frames,
+            num_frames=num_frames,
             height=args.height,
             width=args.width,
             temperature=args.temperature,
@@ -188,18 +190,19 @@ def main():
             os.path.basename(args.style_path).split(".")[0],
             "inversion",
         )
+        mask_path = args.masks_out if run_mask else None  # the propagated masks path
         logger.info(
             "Starting video style transfer..."
             f"\n- Content inversion path: {content_inv}"
             f"\n- Style inversion path: {style_inv}"
-            f"\n- Mask path: {args.mask_path or 'No mask provided, running without mask'}"
+            f"\n- Mask path: {mask_path or 'No mask provided, running without mask'}"
             f"\n- Stylizations output path: {args.stylizations_out}"
         )
         video_style_transfer_main(
             pretrained_model_path=args.pretrained_model_path,
             content_inv_path=content_inv,
             style_inv_path=style_inv,
-            mask_path=args.mask_path,
+            mask_path=mask_path,
             output_path=args.stylizations_out,
             weight_dtype=args.weight_dtype,
             time_steps=args.time_steps,

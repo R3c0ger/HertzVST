@@ -11,10 +11,11 @@ from tqdm import tqdm
 
 
 @torch.no_grad()
-def video_mask_propogation(args):
+def video_mask_propogation(**kwargs):
     # save path
-    name = args.mask_path.split("/")[-1].split(".")[0]
-    output_path = os.path.join(args.output_path, args.backbone, name)
+    name = kwargs["mask_path"].split("/")[-1].split(".")[0]
+    # output_path = os.path.join(kwargs["output_path"], kwargs["backbone"], name)
+    output_path = kwargs["output_path"]
     os.makedirs(output_path, exist_ok=True)
 
     # load color palette
@@ -25,21 +26,21 @@ def video_mask_propogation(args):
     color_palette = np.asarray(color_palette, dtype=np.uint8).reshape(-1, 3)
 
     # save first mask
-    first_seg = Image.open(args.mask_path)
+    first_seg = Image.open(kwargs["mask_path"])
     imageio.imwrite(
         os.path.join(output_path, "00000.png"), np.asarray(first_seg).astype(np.uint8)
     )
     ori_w, ori_h = first_seg.size
-    _, _h, _w = read_feature(args.feature_path, 0, return_h_w=True)
+    _, _h, _w = read_feature(kwargs["feature_path"], 0, return_h_w=True)
     first_seg = np.array(first_seg.resize((_w, _h), 0))
     first_seg = torch.from_numpy(first_seg).float()
     first_seg = to_one_hot(first_seg.unsqueeze(0))
 
     # the queue stores the n preceeding frames
-    que = queue.Queue(args.n_last_frames)
+    que = queue.Queue(kwargs["n_last_frames"])
     # extract first frame feature
-    feat_first = read_feature(args.feature_path, 0).T  # dim x h*w
-    for cnt in tqdm(range(1, args.num_frames)):
+    feat_first = read_feature(kwargs["feature_path"], 0).T  # dim x h*w
+    for cnt in tqdm(range(1, kwargs["num_frames"])):
         # we use the first segmentation and the n previous ones
         feat_src_list = [feat_first] + [pair[0] for pair in list(que.queue)]
         segs_src_list = [first_seg.squeeze(0).flatten(1)] + [
@@ -51,13 +52,13 @@ def video_mask_propogation(args):
         segs_src = torch.cat(segs_src_list, dim=-1)
         C, _ = segs_src.shape
         # extract feat_tgt of current cnt frame
-        feat_tgt, _h, _w = read_feature(args.feature_path, cnt, return_h_w=True)
+        feat_tgt, _h, _w = read_feature(kwargs["feature_path"], cnt, return_h_w=True)
         # mask propogation
         final_mask, feat_tgt, segs_tar = mask_propogation(
-            feat_src, feat_tgt, segs_src, args
+            feat_src, feat_tgt, segs_src, kwargs
         )
         # pop out oldest frame if neccessary
-        if que.qsize() == args.n_last_frames:
+        if que.qsize() == kwargs["n_last_frames"]:
             que.get()
         # push current results into queue
         que.put([feat_tgt, segs_tar])
@@ -84,14 +85,14 @@ def mask_propogation(
     feat_src,
     feat_tar,
     segs,
-    args,
+    kwargs,
 ):
     feat_tar_ori = feat_tar.T
     feat_src = F.normalize(feat_src, dim=0, p=2)
     feat_tar = F.normalize(feat_tar, dim=1, p=2).squeeze(0)
     # *********************************************************************************
-    aff = torch.exp(feat_tar @ feat_src / args.temperature).transpose(1, 0)
-    tk_val_min = torch.topk(aff, args.topk, dim=0).values.min(dim=0).values
+    aff = torch.exp(feat_tar @ feat_src / kwargs["temperature"]).transpose(1, 0)
+    tk_val_min = torch.topk(aff, kwargs["topk"], dim=0).values.min(dim=0).values
     aff[aff < tk_val_min] = 0
     aff = aff / torch.sum(aff, keepdim=True, axis=0)
     # get mask
@@ -104,11 +105,11 @@ def mask_propogation(
     back_nums = len(back_index)
 
     random_indices = torch.randperm(len(fore_index))[
-        : int(len(fore_index) * fore_nums / (fore_nums + back_nums) * args.sample_ratio)
+        : int(len(fore_index) * fore_nums / (fore_nums + back_nums) * kwargs["sample_ratio"])
     ]
     fore_index_sample = fore_index[random_indices]
     random_indices = torch.randperm(len(back_index))[
-        : int(len(back_index) * back_nums / (fore_nums + back_nums) * args.sample_ratio)
+        : int(len(back_index) * back_nums / (fore_nums + back_nums) * kwargs["sample_ratio"])
     ]
     back_index_sample = back_index[random_indices]
     # concat

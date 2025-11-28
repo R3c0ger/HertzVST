@@ -22,7 +22,6 @@ def content_inversion_reconstruction(
     content_path,
     inversion_path,
     reconstruction_path,
-    num_frames,
     height,
     width,
     time_steps,
@@ -34,18 +33,15 @@ def content_inversion_reconstruction(
 ):
     if content_path.endswith(".mp4"):
         vr = decord.VideoReader(content_path, width=width, height=height)
-        sample_index = list(range(0, len(vr), 1))[:num_frames]
-        video = vr.get_batch(sample_index)
+        num_frames = len(vr)
+        video = vr.get_batch(list(range(0, num_frames)))
         pixel_values = (video / 127.5 - 1.0).unsqueeze(0)
         pixel_values = (
             rearrange(pixel_values, "b f h w c -> (b f) c h w").to(weight_dtype).cuda()
         )
     else:
-        pixel_values = (
-            load_video_frames(content_path, num_frames, image_size=(width, height))
-            .to(weight_dtype)
-            .cuda()
-        )
+        pixel_values, num_frames = load_video_frames(content_path, image_size=(width, height))
+        pixel_values = pixel_values.to(weight_dtype).cuda()
     # vae
     latents = pipe.vae.encode(pixel_values).latent_dist.sample()
     latents = rearrange(latents, "(b f) c h w -> b c f h w", f=num_frames)
@@ -71,6 +67,7 @@ def content_inversion_reconstruction(
     ).images
     sample = sample.permute(0, 4, 1, 2, 3).contiguous()
     save_videos_grid(sample, os.path.join(reconstruction_path, "content_video.mp4"))
+    return num_frames
 
 
 def style_inversion_reconstruction(

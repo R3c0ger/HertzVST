@@ -76,7 +76,8 @@ def main(
 
     # make dir
     output_path = os.path.join(
-        output_path, "sd", style_path.split("/")[-1].split(".")[0]
+        output_path, "sd", 
+        os.path.splitext(os.path.basename(style_path))[0]
     )
     inversion_path = os.path.join(output_path, "inversion")
     reconstruction_path = os.path.join(output_path, "reconstruction")

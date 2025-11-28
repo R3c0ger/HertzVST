@@ -224,6 +224,7 @@ examples/
 outputs/
 ckpts/
 results/
+datasets/
 stable-diffusion-v1-5/
 stable-diffusion-v1-5
 temp/

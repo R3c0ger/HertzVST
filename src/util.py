@@ -21,9 +21,6 @@ def seed_everything(seed=42):
 
 
 def save_folder(videos: torch.Tensor, path: str, rescale=False, n_rows=4, fps=8):
-    # If the input is a numpy array, convert it to a tensor
-    if isinstance(videos, np.ndarray):
-        videos = torch.from_numpy(videos)
     videos = rearrange(videos, "b c t h w -> t b c h w")
 
     for i, x in enumerate(videos):
@@ -31,15 +28,11 @@ def save_folder(videos: torch.Tensor, path: str, rescale=False, n_rows=4, fps=8)
         x = x.transpose(0, 1).transpose(1, 2).squeeze(-1)
         if rescale:
             x = (x + 1.0) / 2.0  # -1,1 -> 0,1
-        x = torch.clamp(x, 0.0, 1.0)
         x = (x * 255).numpy().astype(np.uint8)
         imageio.imsave(os.path.join(path, f"%05d.png" % (i * 1)), x)
 
 
 def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, n_rows=4, fps=8):
-    # If the input is a numpy array, convert it to a tensor
-    if isinstance(videos, np.ndarray):
-        videos = torch.from_numpy(videos)
     videos = rearrange(videos, "b c t h w -> t b c h w")
     outputs = []
 
@@ -48,7 +41,6 @@ def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, n_rows=4, f
         x = x.transpose(0, 1).transpose(1, 2).squeeze(-1)
         if rescale:
             x = (x + 1.0) / 2.0  # -1,1 -> 0,1
-        x = torch.clamp(x, 0.0, 1.0)
         x = (x * 255).numpy().astype(np.uint8)
         outputs.append(x)
 
@@ -67,13 +59,13 @@ def save_images_as_mp4(
     writer_edit.close()
 
 
-def load_video_frames(frames_path, n_frames, image_size=(512, 512)):
+def load_video_frames(frames_path, image_size=(512, 512)):
     # Load paths
-    paths = [f"{frames_path}/%05d.png" % (i * 1) for i in range(n_frames)]
-    # paths = [
-    #     os.path.join(frames_path, item)
-    #     for item in sorted(os.listdir(frames_path), key=extract_number)
-    # ]
+    # paths = [f"{frames_path}/%05d.png" % (i * 1) for i in range(n_frames)]
+    paths = [
+        os.path.join(frames_path, item)
+        for item in sorted(os.listdir(frames_path), key=lambda x: int(x.split(".")[0]))
+    ]
     frames = []
     for p in paths:
         img = load_image(p, image_size=image_size)
@@ -88,7 +80,7 @@ def load_video_frames(frames_path, n_frames, image_size=(512, 512)):
         tensor_img = torch.from_numpy(normalized_img).permute(2, 0, 1).float()
         frames.append(tensor_img)
     video_tensor = torch.stack(frames)
-    return video_tensor
+    return video_tensor, video_tensor.shape[0]
 
 
 def load_image(
