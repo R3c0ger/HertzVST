@@ -158,41 +158,16 @@ def to_one_hot(y_tensor, n_dims=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--temperature", default=0.2, type=float, help="The temperature for softmax."
-    )
-    parser.add_argument(
-        "--n_last_frames", type=int, default=9, help="The numbers of anchor frames."
-    )
-    parser.add_argument(
-        "--topk", type=int, default=15, help="The hyper-parameters of KNN top k."
-    )
-    parser.add_argument(
-        "--sample_ratio",
-        type=float,
-        default=0.3,
-        help="The sample ratio of mask propagation.",
-    )
-    parser.add_argument(
-        "--num_frames", type=int, default=16, help="The total nums of mask."
-    )
+    parser.add_argument("--temperature", default=0.2, type=float, help="The temperature for softmax.")
+    parser.add_argument("--n_last_frames", type=int, default=9, help="The numbers of anchor frames.")
+    parser.add_argument("--topk", type=int, default=15, help="The hyper-parameters of KNN top k.")
+    parser.add_argument("--sample_ratio",type=float,default=0.3,help="The sample ratio of mask propagation.")
+    parser.add_argument("--num_frames", type=int, default=16, help="The total nums of mask.")
     #
-    parser.add_argument(
-        "--mask_path",
-        type=str,
-        default="examples/masks/mallard-fly.png",
-        help="The path of first frame.",
-    )
+    parser.add_argument("--mask_path", type=str, default="examples/masks/mallard-fly.png", help="The path of first frame.")
     parser.add_argument("--backbone", type=str, default=None)
-    parser.add_argument(
-        "--feature_path",
-        type=str,
-        default=None,
-        help="The path of inversion feature map.",
-    )
-    parser.add_argument(
-        "--output_path", type=str, default=None, help="The path of output."
-    )
+    parser.add_argument("--feature_path", type=str, default=None, help="The path of inversion feature map.")
+    parser.add_argument("--output_path", type=str, default=None, help="The path of output.")
     args = parser.parse_args()
 
     video_mask_propogation(args)

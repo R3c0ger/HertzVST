@@ -44,3 +44,7 @@ def setup_logger(save_dir=get_exp_dir(), level="INFO", file_level=None):
 
 
 logger = setup_logger()
+logger.info(
+    "Logger initialized. \n"
+    f"Logs and experiment results will be saved to: {get_exp_dir()}"
+)

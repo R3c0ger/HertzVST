@@ -18,6 +18,7 @@ from backbones.video_diffusion_sd.pnp_utils import (
 )
 from src.util import save_folder, load_ddim_latents_at_t, seed_everything
 
+from utils import logger, get_exp_dir
 
 def main(
     pretrained_model_path: str,
@@ -98,7 +99,7 @@ def main(
     output_path = os.path.join(
         output_path,
         "sd",
-        f'{content_inv_path.split("/")[-2]}_{style_inv_path.split("/")[-2]}',
+        f'{str(content_inv_path).split("/")[-2]}_{str(style_inv_path).split("/")[-2]}',
     )
     os.makedirs(output_path, exist_ok=True)
     save_folder(sample, output_path)
@@ -116,17 +117,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--content_inv_path",
         type=str,
-        default="results/contents-inv/sd/mallard-fly/inversion",
+        default=get_exp_dir() / "results/contents-inv/sd/mallard-fly/inversion",
     )
     parser.add_argument(
-        "--style_inv_path", type=str, default="results/styles-inv/sd/0/inversion"
+        "--style_inv_path", type=str, default=get_exp_dir() / "results/styles-inv/sd/3/inversion"
     )
     parser.add_argument(
         "--mask_path", type=str, default=None, required=False,
         help="Optional mask path. If not provided, mask will not be used."
     )
     # parser.add_argument("--mask_path", type=str, default="results/masks/sd/mallard-fly")
-    parser.add_argument("--output_path", type=str, default="results/stylizations")
+    parser.add_argument("--output_path", type=str, default=get_exp_dir() / "results/stylizations")
     parser.add_argument("--weight_dtype", type=torch.dtype, default=torch.float16)
     #
     parser.add_argument("--time_steps", type=int, default=50)

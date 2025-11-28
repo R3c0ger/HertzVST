@@ -7,12 +7,13 @@ TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 EXP_DIR: Path = None
 
 
-def init_exp_dir(base_output_dir=BASE_OUTPUT_DIR, timestamp=TIMESTAMP) -> Path:
+def init_exp_dir(base_output_dir=BASE_OUTPUT_DIR, use_time=True, timestamp=TIMESTAMP) -> Path:
     """
     Initialize the experiment directory.
     This function shall be called only once at the start of the program.
 
     :param base_output_dir: Base directory for outputs.
+    :param use_time: Whether to append timestamp to the path.
     :param timestamp: Timestamp string to create a unique experiment directory.
     :return: Path to the experiment directory.
     """
@@ -20,11 +21,10 @@ def init_exp_dir(base_output_dir=BASE_OUTPUT_DIR, timestamp=TIMESTAMP) -> Path:
     if EXP_DIR is not None:
         raise RuntimeError("Experiment directory already initialized!")
 
-    experiment_dir = base_output_dir / timestamp
+    experiment_dir = base_output_dir / timestamp if use_time else base_output_dir
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     EXP_DIR = experiment_dir.resolve()  # Convert to absolute path
-    print(f"Experiment directory initialized at: {EXP_DIR}")
     return EXP_DIR
 
 

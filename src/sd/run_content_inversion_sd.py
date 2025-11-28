@@ -20,6 +20,8 @@ from src.util import seed_everything
 import decord
 decord.bridge.set_bridge("torch")
 
+from utils import logger, get_exp_dir
+
 
 def main(
     pretrained_model_path: str,
@@ -115,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--content_path", type=str, default="examples/contents/mallard-fly"
     )
-    parser.add_argument("--output_path", type=str, default="results/contents-inv")
+    parser.add_argument("--output_path", type=str, default=get_exp_dir() / "results/contents-inv")
     parser.add_argument("--weight_dtype", type=torch.dtype, default=torch.float16)
     #
     parser.add_argument("--num_frames", type=int, default=16)

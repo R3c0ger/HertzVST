@@ -219,8 +219,11 @@ __marimo__/
 .vscode/
 .idea/
 
-# Models and outputs
-outputs
-ckpts
-results
+# Models, test files and outputs
+examples/
+outputs/
+ckpts/
+results/
+stable-diffusion-v1-5/
 stable-diffusion-v1-5
+temp/
