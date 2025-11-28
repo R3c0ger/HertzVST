@@ -35,16 +35,16 @@ def arg_parser():
     parser.add_argument("--pretrained_model_path", type=str, default="stable-diffusion-v1-5", 
                         help="Pretrained Stable Diffusion model path")
     # Content Inversion
-    parser.add_argument("--content_path", type=str, default="examples/contents/mallard-fly", 
+    parser.add_argument("--content_path", type=str, default="examples/contents/00.mp4", 
                         help="Content frames folder")
     parser.add_argument("--content_out", type=str, 
-                        default=get_exp_dir() / "results/contents-inv", 
+                        default=get_exp_dir() + "results/contents-inv", 
                         help="Content inversion output folder")
     # Style Inversion
     parser.add_argument( "--style_path", type=str, default="examples/styles/3.png", 
                         help="Style image path")
     parser.add_argument("--style_out", type=str, 
-                        default=get_exp_dir() / "results/styles-inv", 
+                        default=get_exp_dir() + "results/styles-inv", 
                         help="Style inversion output folder")
     # Mask propagation
     parser.add_argument("--mask_path", type=str, default=None,
@@ -53,11 +53,11 @@ def arg_parser():
     parser.add_argument("--feature_path", type=str, default=None, 
                         help="Feature path (will be inferred from content inversion output if not provided)")
     parser.add_argument("--masks_out", type=str, 
-                        default=get_exp_dir() / "results/masks", 
+                        default=get_exp_dir() + "results/masks", 
                         help="Mask propagation output folder")
     # Final stylization
     parser.add_argument("--stylizations_out", type=str, 
-                        default=get_exp_dir() / "results/stylizations", 
+                        default=get_exp_dir() + "results/stylizations", 
                         help="Final stylizations output folder")
     
     # Other parameters
@@ -150,7 +150,7 @@ def main():
         feature_default = os.path.join(
             args.content_out,
             args.backbone,
-            os.path.basename(args.content_path),
+            os.path.basename(args.content_path).split(".")[0],
             "features",
             "inversion_feature_map_2_block_301_step.pt",
         )
@@ -179,7 +179,7 @@ def main():
         content_inv = os.path.join(
             args.content_out, 
             args.backbone, 
-            os.path.basename(args.content_path), 
+            os.path.basename(args.content_path).split(".")[0], 
             "inversion"
         )
         style_inv = os.path.join(

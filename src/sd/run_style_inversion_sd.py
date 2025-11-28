@@ -15,7 +15,6 @@ from backbones.video_diffusion_sd.pipelines.stable_diffusion import (
 )
 from inversion_tools.ddim_inversion import style_inversion_reconstruction
 from src.util import seed_everything
-
 from utils import logger, get_exp_dir
 
 
@@ -110,8 +109,8 @@ if __name__ == "__main__":
     #     "--pretrained_model_path", type=str, 
     #     default="stabilityai/stable-diffusion-2-1-base"
     # )
-    parser.add_argument("--style_path", type=str, default="examples/styles/3.png")
-    parser.add_argument("--output_path", type=str, default=get_exp_dir() / "results/styles-inv")
+    parser.add_argument("--style_path", type=str, default="examples/styles/0.png")
+    parser.add_argument("--output_path", type=str, default=get_exp_dir() + "results/styles-inv")
     parser.add_argument("--weight_dtype", type=torch.dtype, default=torch.float16)
     #
     parser.add_argument("--num_frames", type=int, default=16)

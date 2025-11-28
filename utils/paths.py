@@ -28,18 +28,18 @@ def init_exp_dir(base_output_dir=BASE_OUTPUT_DIR, use_time=True, timestamp=TIMES
     return EXP_DIR
 
 
-def get_exp_dir() -> Path:
+def get_exp_dir() -> str:
     """
     Get the experiment directory. Must be called after init_experiment_dir().
 
-    :return: Path to the experiment directory.
+    :return: Path to the experiment directory as a string.
     """
     if EXP_DIR is None:
         raise RuntimeError(
             "Experiment directory not initialized! "
             "Call init_experiment_dir() first."
         )
-    return EXP_DIR
+    return str(EXP_DIR) + "/"
 
 
 # Initialize the experiment directory at module load time

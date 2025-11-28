@@ -11,6 +11,8 @@ import torchvision
 from PIL import Image
 from einops import rearrange
 
+from utils import logger
+
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -19,6 +21,9 @@ def seed_everything(seed=42):
 
 
 def save_folder(videos: torch.Tensor, path: str, rescale=False, n_rows=4, fps=8):
+    # If the input is a numpy array, convert it to a tensor
+    if isinstance(videos, np.ndarray):
+        videos = torch.from_numpy(videos)
     videos = rearrange(videos, "b c t h w -> t b c h w")
 
     for i, x in enumerate(videos):
@@ -26,11 +31,15 @@ def save_folder(videos: torch.Tensor, path: str, rescale=False, n_rows=4, fps=8)
         x = x.transpose(0, 1).transpose(1, 2).squeeze(-1)
         if rescale:
             x = (x + 1.0) / 2.0  # -1,1 -> 0,1
+        x = torch.clamp(x, 0.0, 1.0)
         x = (x * 255).numpy().astype(np.uint8)
         imageio.imsave(os.path.join(path, f"%05d.png" % (i * 1)), x)
 
 
 def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, n_rows=4, fps=8):
+    # If the input is a numpy array, convert it to a tensor
+    if isinstance(videos, np.ndarray):
+        videos = torch.from_numpy(videos)
     videos = rearrange(videos, "b c t h w -> t b c h w")
     outputs = []
 
@@ -39,6 +48,7 @@ def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, n_rows=4, f
         x = x.transpose(0, 1).transpose(1, 2).squeeze(-1)
         if rescale:
             x = (x + 1.0) / 2.0  # -1,1 -> 0,1
+        x = torch.clamp(x, 0.0, 1.0)
         x = (x * 255).numpy().astype(np.uint8)
         outputs.append(x)
 
@@ -152,3 +162,91 @@ def load_mask(mask_path="", n_frames=16):
     image_tensor_torch = torch.from_numpy(image_tensor).unsqueeze(0)
     image_tensor_torch = image_tensor_torch.clip(0, 1)
     return image_tensor_torch
+
+
+def extract_video_frames(video_path: str, output_frames_dir: str, image_size=(512, 512), max_frames: int = None):
+    """
+    Split a video into frames and save them as images.
+    
+    
+    Args:
+        video_path: Input video path
+        output_frames_dir: Directory to save the output frames
+        image_size: Output image size
+        max_frames: Maximum number of frames to extract. If None, extract all frames.
+    
+    Returns:
+        (Number of extracted frames, Video fps)
+    """
+    import decord
+    decord.bridge.set_bridge("torch")
+    
+    os.makedirs(output_frames_dir, exist_ok=True)
+    
+    vr = decord.VideoReader(video_path, width=image_size[0], height=image_size[1])
+    total_frames = len(vr)
+    # Get the video's fps
+    try:
+        video_fps = vr.get_avg_fps()
+    except:
+        video_fps = 30.0  # Default fps
+    
+    if max_frames is not None:
+        # Uniformly sample frames
+        if len(vr) <= max_frames:
+            sample_index = list(range(0, len(vr)))
+        else:
+            step = len(vr) // max_frames
+            sample_index = list(range(0, len(vr), step))[:max_frames]
+    else:
+        sample_index = list(range(0, len(vr)))
+    
+    video = vr.get_batch(sample_index)
+    
+    # Process each frame
+    for i, frame in enumerate(video):
+        # decord returns a torch tensor when using the torch bridge
+        if isinstance(frame, torch.Tensor):
+            frame_np = frame.cpu().numpy()
+        else:
+            frame_np = np.array(frame)
+        # Ensure values are within [0, 255] range
+        frame_np = np.clip(frame_np, 0, 255).astype(np.uint8)
+        frame_img = Image.fromarray(frame_np)
+        frame_img.save(os.path.join(output_frames_dir, f"%05d.png" % i))
+    
+    return len(sample_index), video_fps
+
+
+def frames_to_video(frames_dir: str, output_video_path: str, fps: int = 8):
+    """
+    Combine frame images into a video.
+    
+    Args:
+        frames_dir: Directory containing frame images
+        output_video_path: Output video path
+        fps: Video frame rate
+    """
+    import glob
+    import re
+    
+    # Get all frame images and sort them numerically
+    frame_files = glob.glob(os.path.join(frames_dir, "*.png"))
+    if not frame_files:
+        raise ValueError(f"No frame images found in {frames_dir}")
+    
+    # Sort by the number in the filename
+    def extract_number(filename):
+        match = re.search(r'(\d+)', os.path.basename(filename))
+        return int(match.group(1)) if match else 0
+    
+    frame_files = sorted(frame_files, key=extract_number)
+    
+    frames = []
+    for frame_file in frame_files:
+        img = Image.open(frame_file).convert("RGB")
+        frames.append(np.array(img))
+    
+    os.makedirs(os.path.dirname(output_video_path) if os.path.dirname(output_video_path) else ".", exist_ok=True)
+    imageio.mimsave(output_video_path, frames, fps=fps)
+    logger.info(f"Video saved to: {output_video_path}")

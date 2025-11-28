@@ -367,6 +367,9 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         return image_embeds
     
     def decode_latents(self, latents, num_frames=16, decode_chunk_size=16):
+        # From the shape of latents, get the actual number of frames: (b, c, f, h, w)
+        actual_num_frames = latents.shape[2] if len(latents.shape) == 5 else num_frames
+        
         latents = latents.permute(0, 2, 1, 3, 4).contiguous()
         latents = latents.flatten(0, 1)
         latents = 1 / self.vae.config.scaling_factor * latents
@@ -387,7 +390,8 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         frames = torch.cat(frames, dim=0)
         frames = (frames / 2 + 0.5).clamp(0, 1)
 
-        frames = rearrange(frames, "(b f) c h w -> b f h w c", f=16)
+        # Use the actual number of frames instead of the hardcoded 16
+        frames = rearrange(frames, "(b f) c h w -> b f h w c", f=actual_num_frames)
         # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
         frames = frames.cpu().float().numpy()
 
@@ -682,6 +686,24 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                 # ---------------------------------add code------------------------------------
                 content_inv_latents_at_t = load_ddim_latents_at_t(num_inference_steps - i, content_inv_path).to(latents.dtype).to(self.device)
                 style_inv_latents_at_t = load_ddim_latents_at_t(num_inference_steps - i, style_inv_path).to(latents.dtype).to(self.device)
+                
+                # Check and adjust frame count matching (latents shape: (b, c, f, h, w))
+                content_frames = content_inv_latents_at_t.shape[2]
+                style_frames = style_inv_latents_at_t.shape[2]
+                if content_frames != style_frames:
+                    if style_frames == 1:
+                        style_inv_latents_at_t = style_inv_latents_at_t.repeat(1, 1, content_frames, 1, 1)
+                    elif content_frames > style_frames:
+                        repeat_times = content_frames // style_frames
+                        remainder = content_frames % style_frames
+                        style_inv_latents_at_t_repeated = style_inv_latents_at_t.repeat(1, 1, repeat_times, 1, 1)
+                        if remainder > 0:
+                            style_inv_latents_at_t_remainder = style_inv_latents_at_t[:, :, -remainder:, :, :]
+                            style_inv_latents_at_t = torch.cat([style_inv_latents_at_t_repeated, style_inv_latents_at_t_remainder], dim=2)
+                        else:
+                            style_inv_latents_at_t = style_inv_latents_at_t_repeated
+                    else:
+                        style_inv_latents_at_t = style_inv_latents_at_t[:, :, :content_frames, :, :]
                 #
                 # localized latent blending
                 if mask_path and i <= 0.9 * num_inference_steps:
@@ -722,19 +744,21 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                         # copy data
                         ori_estimated_frames = estimated_frames.copy()
                         # ----------------------------------------------------------------------------------------------------
+                        # From the shape of estimated_frames, get the actual number of frames: (b, c, f, h, w)
+                        actual_num_frames = estimated_frames.shape[2] if len(estimated_frames.shape) == 5 else 16
                         r = 2
                         cnt_nums = 1
                         for iters in range(cnt_nums):
                             # store temp result
                             estimated_frames_tmp = np.zeros_like(estimated_frames).astype(np.float32)
                             # for each key frame, sliding window
-                            for key_index in range(0, 16):
+                            for key_index in range(0, actual_num_frames):
                                 key_frame = estimated_frames[:, :, key_index, :, :][0].transpose(1, 2, 0).copy()
                                 weight = 0
                                 # consider the window of key frame
                                 for bias in range(-r, r+1):
                                     now_index = key_index + bias
-                                    if now_index >= 0 and now_index < 16:
+                                    if now_index >= 0 and now_index < actual_num_frames:
                                         # choose from update estimated_frames
                                         now_frame = estimated_frames[:,:, now_index, :, :][0].transpose(1, 2, 0).copy()
                                         if bias == 0:
@@ -795,6 +819,9 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         latents,
         decode_chunk_size=16,
     ):
+        # From the shape of latents, get the actual number of frames: (b, c, f, h, w)        
+        actual_num_frames = latents.shape[2] if len(latents.shape) == 5 else 16
+        
         latents = 1 / 0.18215 * latents
         latents = rearrange(latents, "b c f h w -> (b f) c h w")
         forward_vae_fn = self.vae._orig_mod.forward if is_compiled_module(self.vae) else self.vae.forward
@@ -814,21 +841,31 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         frames = (frames / 2 + 0.5).clamp(0, 1)
         frames = frames.cpu().float().numpy()
         frames = (frames * 255).round().astype("uint8")
-        frames = rearrange(frames, "(b f) c h w -> b c f h w", f=16)
+        frames = rearrange(frames, "(b f) c h w -> b c f h w", f=actual_num_frames)
 
         return frames
 
     def get_latent_image(
         self,
-        image: Image.Image,
+        image,
     ):
+        # image should be a numpy array with shape (b, c, f, h, w)
+        if isinstance(image, np.ndarray):
+            if len(image.shape) == 5:
+                # From the shape of image, get the actual number of frames: (b, c, f, h, w)
+                actual_num_frames = image.shape[2]
+            else:
+                actual_num_frames = 16
+        else:
+            actual_num_frames = 16
+        
         image = rearrange(image, "b c f h w -> (b f) c h w")
         # transforms to [-1, 1]
         image = (image / 127.5) - 1.0
         image = torch.from_numpy(image).to(device=self.device, dtype=self.vae.dtype) 
 
         latents = self.vae.encode(image).latent_dist.sample()
-        latents = rearrange(latents, "(b f) c h w -> b c f h w", f=16)
+        latents = rearrange(latents, "(b f) c h w -> b c f h w", f=actual_num_frames)
         latents = 0.18215 * latents
         
         return latents
