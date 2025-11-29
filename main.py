@@ -62,6 +62,7 @@ def arg_parser():
                         help="Final stylizations output folder")
     
     # Other parameters
+    # TODO: new params for chunks
     parser.add_argument("--weight_dtype", type=torch.dtype, default=torch.float16)
     parser.add_argument("--height", type=int, default=512, help="The height of the frames.")
     parser.add_argument("--width", type=int, default=512, help="The width of the frames.")
@@ -70,6 +71,10 @@ def arg_parser():
     parser.add_argument("--ft_timesteps", type=int, default=301, help="The feature timesteps.")
     parser.add_argument("--is_opt", action="store_true", default=True, help="Use Easy-Inv.")
     parser.add_argument("--seed", type=int, default=33, help="Random seed.")
+    parser.add_argument("--max_frames_per_chunk", type=int, default=30, 
+                        help="Maximum frames per chunk for long video inversion.")
+    parser.add_argument("--overlap_frames", type=int, default=2, 
+                        help="Number of overlapping frames for smooth transition between chunks.")
     # For mask propagation
     parser.add_argument("--temperature", default=0.2, type=float, help="The temperature for softmax.")
     parser.add_argument("--n_last_frames", type=int, default=9, help="The numbers of anchor frames.")
@@ -113,7 +118,7 @@ def main():
             f"\n- Content path: {args.content_path}"
             f"\n- Content output path: {args.content_out}"
         )
-        num_frames = content_inversion_main(
+        total_frames, fps, chunks = content_inversion_main(
             pretrained_model_path=args.pretrained_model_path,
             content_path=args.content_path,
             output_path=args.content_out,
@@ -125,6 +130,8 @@ def main():
             ft_timesteps=args.ft_timesteps,
             is_opt=args.is_opt,
             seed=args.seed,
+            max_frames_per_chunk=args.max_frames_per_chunk,
+            overlap_frames=args.overlap_frames,
         )
 
     if run_style:
@@ -132,19 +139,18 @@ def main():
             "Starting style inversion..."
             f"\n- Style path: {args.style_path}"
             f"\n- Style output path: {args.style_out}"
-            f"\n- Number of frames: {num_frames}"
         )
         style_inversion_main(
             pretrained_model_path=args.pretrained_model_path,
             style_path=args.style_path,
             output_path=args.style_out,
             weight_dtype=args.weight_dtype,
-            num_frames=num_frames,
             height=args.height,
             width=args.width,
             time_steps=args.time_steps,
             is_opt=args.is_opt,
             seed=args.seed,
+            chunks=chunks,
         )
 
     if run_mask:
@@ -166,7 +172,7 @@ def main():
             feature_path=args.feature_path or feature_default,
             mask_path=args.mask_path or "examples/masks/mallard-fly.png",
             output_path=args.masks_out,
-            num_frames=num_frames,
+            num_frames=total_frames,
             height=args.height,
             width=args.width,
             temperature=args.temperature,
@@ -207,6 +213,9 @@ def main():
             weight_dtype=args.weight_dtype,
             time_steps=args.time_steps,
             seed=args.seed,
+            max_frames_per_chunk=args.max_frames_per_chunk, 
+            overlap_frames=args.overlap_frames,
+            fps=fps,
         )
 
 

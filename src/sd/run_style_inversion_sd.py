@@ -24,13 +24,13 @@ def main(
     output_path: str,
     weight_dtype: torch.dtype = torch.float16,
     #
-    num_frames: int = 16,
     height: int = 512,
     width: int = 512,
     time_steps: int = 50,
     #
     is_opt: bool = False,
     seed: Optional[int] = 33,
+    chunks: list = None,
     **kwargs,
 ):
     if seed is not None:
@@ -92,12 +92,12 @@ def main(
             style_path,
             inversion_path,
             reconstruction_path,
-            num_frames,
             height,
             width,
             time_steps,
             weight_dtype,
             is_opt=is_opt,
+            chunks=chunks,
         )
 
 
@@ -121,6 +121,10 @@ if __name__ == "__main__":
     #
     parser.add_argument("--is_opt", action="store_true", help="use Easy-Inv")
     parser.add_argument("--seed", type=int, default=33)
+    parser.add_argument(
+        "--chunks", type=list, default=None, 
+        help="List of tuples indicating start and end frame indices for each chunk."
+    )
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)

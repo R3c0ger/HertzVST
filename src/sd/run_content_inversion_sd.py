@@ -1,7 +1,5 @@
 import argparse
-import json
 import os
-import shutil
 from typing import Optional
 
 import torch
@@ -38,6 +36,8 @@ def main(
     ft_timesteps: int = None,
     is_opt: bool = True,
     seed: Optional[int] = 33,
+    max_frames_per_chunk: int = 30,
+    overlap_frames: int = 2,
     **kwargs,
 ):
     if seed is not None:
@@ -94,7 +94,7 @@ def main(
     
     # run inversion and reconstruction
     with torch.no_grad():
-        num_frames = content_inversion_reconstruction(
+        total_frames, fps, chunks = content_inversion_reconstruction(
             pipe,
             ddim_inv_scheduler,
             content_path,
@@ -108,8 +108,10 @@ def main(
             ft_timesteps=[ft_timesteps],
             ft_path=ft_path,
             is_opt=is_opt,
+            max_frames_per_chunk=max_frames_per_chunk,
+            overlap_frames=overlap_frames,
         )
-    return num_frames
+    return total_frames, fps, chunks
 
 
 if __name__ == "__main__":
@@ -132,6 +134,8 @@ if __name__ == "__main__":
     parser.add_argument("--ft_timesteps", type=int, default=301)
     parser.add_argument("--is_opt", action="store_true", help="use Easy-Inv")
     parser.add_argument("--seed", type=int, default=33)
+    parser.add_argument("--max_frames_per_chunk", type=int, default=30)
+    parser.add_argument("--overlap_frames", type=int, default=2)
     args = parser.parse_args()
     args_dict = vars(args)
     main(**args_dict)

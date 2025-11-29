@@ -31,15 +31,13 @@ from .unet_3d_blocks import (
 )
 from .resnet import PseudoConv3d
 
-
-logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+from utils import logger
 
 
 @dataclass
 class UNetPseudo3DConditionOutput(BaseOutput):
     sample: torch.FloatTensor
     up_ft = {}
-    
 
 
 class UNetPseudo3DConditionModel(ModelMixin, ConfigMixin):
@@ -433,7 +431,7 @@ class UNetPseudo3DConditionModel(ModelMixin, ConfigMixin):
                     save_path = os.path.join(ft_path, f'inversion_feature_map_{i}_block_{timestep}_step.pt')
                     torch.save(sample[0].permute(1, 2, 3, 0).contiguous().detach(),
                             save_path)
-                    print(f'save feature map at: {save_path}')
+                    logger.info(f'save feature map at: {save_path}')
         
         # 6. post-process
         sample = self.conv_norm_out(sample)

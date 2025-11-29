@@ -61,26 +61,30 @@ def save_images_as_mp4(
 
 def load_video_frames(frames_path, image_size=(512, 512)):
     # Load paths
-    # paths = [f"{frames_path}/%05d.png" % (i * 1) for i in range(n_frames)]
-    paths = [
+    # frame_paths = [f"{frames_path}/%05d.png" % (i * 1) for i in range(n_frames)]
+    frame_paths = [
         os.path.join(frames_path, item)
         for item in sorted(os.listdir(frames_path), key=lambda x: int(x.split(".")[0]))
     ]
-    frames = []
-    for p in paths:
-        img = load_image(p, image_size=image_size)
-        # check!
-        if img.size != image_size:
-            img = img.resize(image_size)
-            raise ValueError(f"Frame size does not match config.image_size")
-        # transforms to tensor
-        np_img = np.array(img)
-        # transforms to [-1, 1]
-        normalized_img = (np_img / 127.5) - 1.0
-        tensor_img = torch.from_numpy(normalized_img).permute(2, 0, 1).float()
-        frames.append(tensor_img)
-    video_tensor = torch.stack(frames)
-    return video_tensor, video_tensor.shape[0]
+    total_frames = len(frame_paths)
+    fps = 8  # default fps
+
+    def frame_loader(indices):
+        frames = []
+        for i in indices:
+            img = load_image(frame_paths[i], image_size=image_size)
+            # check
+            if img.size != image_size:
+                img = img.resize(image_size)
+                raise ValueError(f"Frame size does not match config.image_size")
+            # to tensor
+            np_img = np.array(img)
+            normalized = (np_img / 127.5) - 1.0  # transforms to [-1, 1]
+            tensor_img = torch.from_numpy(normalized).permute(2, 0, 1).float()
+            frames.append(tensor_img)
+        return torch.stack(frames, dim=0)
+
+    return frame_loader, total_frames, fps
 
 
 def load_image(
