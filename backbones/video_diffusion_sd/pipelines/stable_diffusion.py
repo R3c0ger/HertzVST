@@ -1,27 +1,18 @@
 # code mostly taken from https://github.com/huggingface/diffusers
 import inspect
 from typing import Callable, List, Optional, Union
-import os, sys
-import numpy as np
-from PIL import Image
-import PIL
-from diffusers.utils.torch_utils import is_compiled_module
 
+import PIL
+import diffusers
+import numpy as np
 import torch
 import torch.nn.functional as F
-from einops import rearrange
-
-from diffusers.utils import is_accelerate_available
-from packaging import version
-from transformers import CLIPTextModel, CLIPTokenizer
-
+from PIL import Image
 from diffusers.configuration_utils import FrozenDict
 from diffusers.models import AutoencoderKL
 # from diffusers.pipeline_utils import DiffusionPipeline
-try:
-    from diffusers.pipeline_utils import DiffusionPipeline
-except:
-    from diffusers.pipelines.pipeline_utils import DiffusionPipeline
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
+from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.schedulers import (
     DDIMScheduler,
     DPMSolverMultistepScheduler,
@@ -30,16 +21,18 @@ from diffusers.schedulers import (
     LMSDiscreteScheduler,
     PNDMScheduler,
 )
-from diffusers.utils import deprecate, logging
-from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
+from diffusers.utils import deprecate, is_accelerate_available
+from diffusers.utils.torch_utils import is_compiled_module
+from einops import rearrange
+from packaging import version
+from transformers import CLIPTextModel, CLIPTokenizer
 
-from backbones.video_diffusion_sd.pnp_utils import register_time, latent_adain
 from backbones.video_diffusion_sd.models.unet_3d_condition import UNetPseudo3DConditionModel
-
-from src.cal_optica_flow import get_warp
+from backbones.video_diffusion_sd.pnp_utils import register_time, latent_adain
+from src.calc_optical_flow import get_warp
+from src.temporal.temporal_attention import create_temporal_attention_enhancement
 from src.util import load_mask, load_ddim_latents_at_t
-
-logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+from utils import logger
 
 
 class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
@@ -367,7 +360,7 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         return image_embeds
     
     def decode_latents(self, latents, num_frames=16, decode_chunk_size=16):
-        # From the shape of latents, get the actual number of frames: (b, c, f, h, w)
+        # Get actual number of frames from latents shape: (b, c, f, h, w)
         actual_num_frames = latents.shape[2] if len(latents.shape) == 5 else num_frames
         
         latents = latents.permute(0, 2, 1, 3, 4).contiguous()
@@ -390,7 +383,7 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         frames = torch.cat(frames, dim=0)
         frames = (frames / 2 + 0.5).clamp(0, 1)
 
-        # Use the actual number of frames instead of the hardcoded 16
+        # Use actual number of frames instead of hardcoded 16
         frames = rearrange(frames, "(b f) c h w -> b f h w c", f=actual_num_frames)
         # we always cast to float32 as this does not cause significant overhead and is compatible with bfloat16
         frames = frames.cpu().float().numpy()
@@ -650,6 +643,17 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         style_inv_path=None,
         mask_path=None,
         #
+        # Plan A: Multi-Scale Optical Flow Fusion Parameters
+        use_multi_scale_flow: bool = False,
+        flow_scales: List[float] = [1.0, 0.5, 0.25],
+        flow_fusion_method: str = 'weighted_average',
+        #
+        # Plan B: Temporal Attention Enhancement Parameters        
+        use_temporal_attention: bool = False,
+        temporal_attention_channels: int = 320,
+        temporal_attention_heads: int = 8,
+        temporal_attention_dropout: float = 0.0,
+        temporal_attention_steps: tuple = (20, 30),  # At which denoising steps to apply
         **kwargs,
     ):
         device = self._execution_device
@@ -680,6 +684,24 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         # Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
 
+        # Plan B: Initialize Temporal Attention Enhancement module        
+        temporal_attention_enhancement = None
+        if use_temporal_attention:
+            # Get the number of channels in latents
+            latent_channels = latents.shape[1]
+            temporal_attention_enhancement = create_temporal_attention_enhancement(
+                channels=latent_channels,
+                num_heads=temporal_attention_heads,
+                dropout=temporal_attention_dropout,
+            )
+            temporal_attention_enhancement.temporal_attn = temporal_attention_enhancement.temporal_attn.to(device)
+            logger.info(f"Temporal Attention Enhancement enabled (channels={latent_channels}, heads={temporal_attention_heads})")
+        
+        # Plan A: Multi-Scale Optical Flow Fusion logging
+        if use_multi_scale_flow:
+            logger.info(f"Multi-Scale Optical Flow Fusion enabled (scales={flow_scales}, method={flow_fusion_method})")
+        else:
+            logger.info("Multi-Scale Optical Flow Fusion not enabled (using standard optical flow)")
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
@@ -728,13 +750,33 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                 # register time
                 register_time(self, i)
                 
+                # Plan B: Apply Temporal Attention Enhancement before denoising
+                if use_temporal_attention and temporal_attention_enhancement is not None:
+                    # Check if within the specified denoising step range
+                    step_start, step_end = temporal_attention_steps
+                    if step_start <= i <= step_end:
+                        # Apply temporal attention directly to latents (before UNet processing)                        
+                        num_frames = latents.shape[2]
+                        
+                        # Apply temporal attention to latents
+                        enhanced_latents = temporal_attention_enhancement.apply_to_latents(
+                            latents, num_frames
+                        )
+                        
+                        # Use a blending strategy: retain part of the original latents while enhancing temporal consistency
+                        temporal_alpha = 0.5  # Blending weight, can be adjusted
+                        latents = (1 - temporal_alpha) * latents + temporal_alpha * enhanced_latents
+                        
+                        # Update latent_model_input
+                        latent_model_input = torch.cat([content_inv_latents_at_t, style_inv_latents_at_t, latents], dim=0)
+                
                 # predict the noise residual
                 noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=prompt_embeds_all).sample.to(dtype=latents_dtype)
                 # perform guidance
                 _noise_pred_content_inv, _noise_pred_style_inv, noise_pred = noise_pred.chunk(3)
                 # -------------------------------Sliding window smoothing--------------------------
-                # smoother = 'pixel'
-                smoother = None
+                # If Plan A (Multi-Scale Optical Flow Fusion) is enabled, enable sliding window smoothing
+                smoother = None if not use_multi_scale_flow else 'pixel'
                 if smoother is not None and i >= 20 and i < 25:
                     # cal Z_0
                     pred_original_sample = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).pred_original_sample
@@ -743,8 +785,8 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                         estimated_frames = self.get_images_from_latents(pred_original_sample)
                         # copy data
                         ori_estimated_frames = estimated_frames.copy()
-                        # ----------------------------------------------------------------------------------------------------
-                        # From the shape of estimated_frames, get the actual number of frames: (b, c, f, h, w)
+                        # ------------------------------------------------------------------------------------
+                        # Get the actual number of frames from the shape of estimated_frames: (b, c, f, h, w)
                         actual_num_frames = estimated_frames.shape[2] if len(estimated_frames.shape) == 5 else 16
                         r = 2
                         cnt_nums = 1
@@ -764,7 +806,21 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                                         if bias == 0:
                                             estimated_frames_tmp[:, :, key_index, :, :] = estimated_frames_tmp[:,:, key_index, :, :] + now_frame.transpose(2, 0, 1).astype(np.float32)
                                         else:
-                                            warp_result = get_warp(key_frame, now_frame, key_frame, now_frame).transpose(2, 0, 1)
+                                            # Plan A: Choose whether to use multi-scale optical flow fusion based on parameters
+                                            if use_multi_scale_flow:
+                                                # Use multi-scale optical flow fusion for warp
+                                                warp_result = get_warp(
+                                                    key_frame, now_frame, key_frame, now_frame,
+                                                    use_multi_scale=True,  # Enable multi-scale optical flow fusion
+                                                    flow_scales=flow_scales,  # Multi-scale list
+                                                    flow_fusion_method=flow_fusion_method  # Fusion method
+                                                ).transpose(2, 0, 1)
+                                            else:
+                                                # Use standard optical flow (single scale)
+                                                warp_result = get_warp(
+                                                    key_frame, now_frame, key_frame, now_frame,
+                                                    use_multi_scale=False,  # Do not use multi-scale
+                                                ).transpose(2, 0, 1)
                                             estimated_frames_tmp[:,:, key_index, :, :] = estimated_frames_tmp[:,:, key_index, :, :] + warp_result.astype(np.float32)     
                                         weight += 1
                                 # estimated_frames_tmp[:,:, key_index, :, :] = estimated_frames_tmp[:,:, key_index, :, :] / weight
@@ -776,13 +832,39 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                         # encoder it to latent, [-1, 1]
                         pred_original_sample = self.get_latent_image(estimated_frames)
                     else:
-                        print('error')
+                        logger.error('error')
                         return
                     # adjust noise_pred
                     noise_pred = self.return_to_timestep(t, latents, pred_original_sample, self.scheduler)
+                
+                # Plan B: Apply Temporal Attention after denoising (enhance temporal consistency)
+                if use_temporal_attention and temporal_attention_enhancement is not None:
+                    step_start, step_end = temporal_attention_steps
+                    if step_start <= i <= step_end:
+                        # Apply temporal attention to noise_pred to enhance inter-frame consistency
+                        num_frames = noise_pred.shape[2]
+                        enhanced_noise_pred = temporal_attention_enhancement.apply_to_latents(
+                            noise_pred, num_frames
+                        )
+                        # Mix the original and enhanced noise_pred
+                        temporal_beta = 0.3  # Mixing weight
+                        noise_pred = (1 - temporal_beta) * noise_pred + temporal_beta * enhanced_noise_pred
+                
                 # ----------------------------------------------------------------------------------
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
+                
+                # Plan B: Apply Temporal Attention again after updating latents (optional, further enhancement)
+                if use_temporal_attention and temporal_attention_enhancement is not None:
+                    step_start, step_end = temporal_attention_steps
+                    if step_start <= i <= step_end:
+                        num_frames = latents.shape[2]
+                        enhanced_latents = temporal_attention_enhancement.apply_to_latents(
+                            latents, num_frames
+                        )
+                        # Slightly mix to maintain denoising effect while enhancing temporal consistency
+                        temporal_gamma = 0.2  # Smaller mixing weight
+                        latents = (1 - temporal_gamma) * latents + temporal_gamma * enhanced_latents
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                     progress_bar.update()
@@ -819,7 +901,7 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         latents,
         decode_chunk_size=16,
     ):
-        # From the shape of latents, get the actual number of frames: (b, c, f, h, w)        
+        # Get the actual number of frames from the latents shape: (b, c, f, h, w)
         actual_num_frames = latents.shape[2] if len(latents.shape) == 5 else 16
         
         latents = 1 / 0.18215 * latents
@@ -841,21 +923,14 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         frames = (frames / 2 + 0.5).clamp(0, 1)
         frames = frames.cpu().float().numpy()
         frames = (frames * 255).round().astype("uint8")
+        # Use the actual number of frames instead of hardcoding 16
         frames = rearrange(frames, "(b f) c h w -> b c f h w", f=actual_num_frames)
-
         return frames
 
-    def get_latent_image(
-        self,
-        image,
-    ):
-        # image should be a numpy array with shape (b, c, f, h, w)
+    def get_latent_image(self, image: Image.Image):
+        # Get the actual number of frames from the image shape: (b, c, f, h, w)
         if isinstance(image, np.ndarray):
-            if len(image.shape) == 5:
-                # From the shape of image, get the actual number of frames: (b, c, f, h, w)
-                actual_num_frames = image.shape[2]
-            else:
-                actual_num_frames = 16
+            actual_num_frames = image.shape[2] if len(image.shape) == 5 else 16
         else:
             actual_num_frames = 16
         
@@ -865,6 +940,7 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         image = torch.from_numpy(image).to(device=self.device, dtype=self.vae.dtype) 
 
         latents = self.vae.encode(image).latent_dist.sample()
+        # Use the actual number of frames instead of hardcoding 16
         latents = rearrange(latents, "(b f) c h w -> b c f h w", f=actual_num_frames)
         latents = 0.18215 * latents
         
@@ -883,30 +959,17 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
         return pil_images
 
     def print_pipeline(self, logger):
-        print('Overview function of pipeline: ')
-        print(self.__class__)
-
-        print(self)
+        logger.info('Overview function of pipeline: ')
+        logger.info(self.__class__)
+        logger.info(self)
         
         expected_modules, optional_parameters = self._get_signature_keys(self)        
         components_details = {
-            k: getattr(self, k) for k in self.config.keys() if not k.startswith("_") and k not in optional_parameters
+            k: getattr(self, k) 
+            for k in self.config.keys() 
+            if not k.startswith("_") and k not in optional_parameters
         }
-        import json
         logger.info(str(components_details))
         
-        print(f"python version {sys.version}")
-        print(f"torch version {torch.__version__}")
-        print(f"validate gpu status:")
-        print( torch.tensor(1.0).cuda()*2)
-        os.system("nvcc --version")
-
-        import diffusers
-        print(diffusers.__version__)
-        print(diffusers.__file__)
-
-        try:
-            import bitsandbytes
-            print(bitsandbytes.__file__)
-        except:
-            print("fail to import bitsandbytes")
+        logger.info(diffusers.__version__)
+        logger.info(diffusers.__file__)
