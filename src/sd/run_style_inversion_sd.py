@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from typing import Optional
 
@@ -15,7 +16,6 @@ from backbones.video_diffusion_sd.pipelines.stable_diffusion import (
 )
 from inversion_tools.ddim_inversion import style_inversion_reconstruction
 from src.util import seed_everything
-from utils import logger, get_exp_dir
 
 
 def main(
@@ -24,13 +24,14 @@ def main(
     output_path: str,
     weight_dtype: torch.dtype = torch.float16,
     #
+    num_frames: int = 30,
     height: int = 512,
     width: int = 512,
     time_steps: int = 50,
     #
     is_opt: bool = False,
     seed: Optional[int] = 33,
-    chunks: list = None,
+    content_name: str = "01",
     **kwargs,
 ):
     if seed is not None:
@@ -74,16 +75,37 @@ def main(
     )
     ddim_inv_scheduler.set_timesteps(time_steps)
 
+    # Determine chunks based on content inversion (if available)
+    chunks = None
+    chunks_info_path = os.path.join(
+        "results",
+        "contents-inv",
+        "sd",
+        content_name,
+        "frames",
+        "chunks",
+        "chunk_info.json",
+    )
+    if os.path.exists(chunks_info_path):
+        with open(chunks_info_path, "r") as f:
+            chunk_data = json.load(f)
+        # use start/end to keep logs consistent; length is end-start
+        chunks = [
+            (c["start_frame"], c["end_frame"]) for c in chunk_data.get("chunks", [])
+        ]
+    else:
+        # fallback: single chunk using num_frames
+        chunks = [(0, num_frames)]
+
     # make dir
     output_path = os.path.join(
-        output_path, "sd", 
-        os.path.splitext(os.path.basename(style_path))[0]
+        output_path, "sd", style_path.split("/")[-1].split(".")[0]
     )
     inversion_path = os.path.join(output_path, "inversion")
     reconstruction_path = os.path.join(output_path, "reconstruction")
     os.makedirs(inversion_path, exist_ok=True)
     os.makedirs(reconstruction_path, exist_ok=True)
-    
+
     # go!
     with torch.no_grad():
         style_inversion_reconstruction(
@@ -111,7 +133,7 @@ if __name__ == "__main__":
     #     default="stabilityai/stable-diffusion-2-1-base"
     # )
     parser.add_argument("--style_path", type=str, default="examples/styles/0.png")
-    parser.add_argument("--output_path", type=str, default=get_exp_dir() + "results/styles-inv")
+    parser.add_argument("--output_path", type=str, default="results/styles-inv")
     parser.add_argument("--weight_dtype", type=torch.dtype, default=torch.float16)
     #
     parser.add_argument("--num_frames", type=int, default=16)
@@ -122,8 +144,10 @@ if __name__ == "__main__":
     parser.add_argument("--is_opt", action="store_true", help="use Easy-Inv")
     parser.add_argument("--seed", type=int, default=33)
     parser.add_argument(
-        "--chunks", type=list, default=None, 
-        help="List of tuples indicating start and end frame indices for each chunk."
+        "--content_name",
+        type=str,
+        default="01",
+        help="Content name (used to find chunk info in results/contents-inv/sd)",
     )
     args = parser.parse_args()
     args_dict = vars(args)

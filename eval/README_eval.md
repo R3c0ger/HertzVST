@@ -1,4 +1,3 @@
-```markdown
 # Plan A (Multi-scale Optical Flow Fusion) Effect Evaluation Guide
 
 ## Overview
@@ -30,20 +29,20 @@ This evaluation tool is used to quantitatively assess the improvement effect of 
 
 ```bash
 # Run the evaluation script directly
-bash eval/evaluate_plan_a_hjh.sh
+bash eval/eval_multiscale_optical_flow.sh
 ```
 
 ### Method 2: Manually Running the Python Script
 
 ```bash
 # Evaluate video files
-python eval/evaluate_temporal_consistency_hjh.py \
+python eval/eval_temporal_consistency.py \
     --baseline_video results/stylizations/sd/01_0/output_video.mp4 \
     --improved_video results/stylizations/sd/01_0/output_video_hjh.mp4 \
     --output_dir results/evaluation/plan_a_01_0
 
 # Evaluate frame directories
-python eval/evaluate_temporal_consistency_hjh.py \
+python eval/eval_temporal_consistency.py \
     --baseline_video results/stylizations/sd/01_0/frames \
     --improved_video results/stylizations/sd/01_0/frames_plan_a \
     --baseline_is_dir \
@@ -111,9 +110,8 @@ If problems are encountered:
 
 ### Evaluate Only Specific Metrics
 
-Modify the `evaluate_temporal_consistency_hjh.py` script, comment out the calculation sections for metrics not needed.
+Modify the `eval_temporal_consistency.py` script, comment out the calculation sections for metrics not needed.
 
 ### Custom Visualization
 
-Modify the visualization functions in the `eval/evaluate_temporal_consistency_hjh.py` script to customize chart styles and output formats.
-```
+Modify the visualization functions in the `eval/eval_temporal_consistency.py` script to customize chart styles and output formats.

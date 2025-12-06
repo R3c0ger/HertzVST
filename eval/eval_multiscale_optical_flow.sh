@@ -18,7 +18,7 @@ echo "=========================================="
 echo ""
 
 # Run evaluation
-python eval/evaluate_temporal_consistency_hjh.py \
+python eval/eval_temporal_consistency.py \
     --baseline_video "$BASELINE_VIDEO" \
     --improved_video "$IMPROVED_VIDEO" \
     --output_dir "$OUTPUT_DIR"

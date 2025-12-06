@@ -4,10 +4,6 @@ HertzVST - Diffusion-based Training-Free Framework for Video Style Transfer
 </h1>
 </div>
 
-## Overview
-
-
-
 ## Installation
 
 Clone the repository:
@@ -23,15 +19,9 @@ conda activate HertzVST
 pip install -r requirements.txt
 ```
 
-Or installation with `environment.yaml`:
-```
-conda env create -f environment.yaml
-conda activate HertzVST
-```
-
 ## Usage
 
-
+Run `scripts/start_sd.sh` to start the style transfer process. Modify the parameters in the script as needed.
 
 ## Acknowledgements
 

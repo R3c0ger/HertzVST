@@ -828,7 +828,38 @@ class SpatioTemporalStableDiffusionPipeline(DiffusionPipeline):
                         # sliding window end and get final result
                         estimated_frames = estimated_frames.astype(np.uint8)
                         # apply mask
-                        estimated_frames = ori_estimated_frames * mask[None, :].numpy() + (1 - mask[None, :].numpy()) * estimated_frames
+                        if mask_path:
+                            # Get the true number of frames and dimensions
+                            b, c, f, h, w = estimated_frames.shape
+                            mask = load_mask(mask_path, n_frames=f)
+                            # Shape of mask: (1, f, h_mask, w_mask, c) -> need to adjust to (f, h, w)
+                            # Convert mask to numpy and process dimensions
+                            mask_np = mask.squeeze(0).cpu().numpy()  # (f, h_mask, w_mask, c) or (f, h_mask, w_mask)
+                            
+                            # If it's a color mask, convert to grayscale (take the first channel)
+                            if len(mask_np.shape) == 4:
+                                mask_np = mask_np[..., 0]  # (f, h_mask, w_mask)
+                            
+                            # Adjust mask spatial dimensions to match estimated_frames
+                            if mask_np.shape[1:] != (h, w):
+                                import torch.nn.functional as F
+                                mask_tensor = torch.from_numpy(mask_np).float().unsqueeze(1)  # (f, 1, h_mask, w_mask)
+                                mask_tensor = F.interpolate(
+                                    mask_tensor,
+                                    size=(h, w),
+                                    mode='bilinear',
+                                    align_corners=False
+                                ).squeeze(1).numpy()  # (f, h, w)
+                                mask_np = mask_tensor
+                            
+                            # Normalize mask to [0, 1]
+                            mask_np = mask_np.clip(0, 1)
+                            
+                            # Expand dimensions to match estimated_frames: (b, c, f, h, w)
+                            mask_np = mask_np[None, None, :, :, :]  # (1, 1, f, h, w)
+                            mask_np = np.repeat(mask_np, c, axis=1)  # (1, c, f, h, w)
+                            estimated_frames = ori_estimated_frames * mask_np + (1 - mask_np) * estimated_frames
+                        # estimated_frames = ori_estimated_frames * mask[None, :].numpy() + (1 - mask[None, :].numpy()) * estimated_frames
                         # encoder it to latent, [-1, 1]
                         pred_original_sample = self.get_latent_image(estimated_frames)
                     else:
