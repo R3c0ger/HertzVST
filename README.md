@@ -248,7 +248,7 @@ CUDA_VISIBLE_DEVICES=0 python src/sd/run_video_style_transfer_sd.py \
 
 ## Acknowledgements
 
-This project is based on [UniVST](https://github.com/QuanjianSong/UniVST) by QuanjianSong.
+This project is based on [UniVST](https://github.com/QuanjianSong/UniVST) by QuanjianSong. 
 
 ## License
 
